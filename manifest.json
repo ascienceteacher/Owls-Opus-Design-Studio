@@ -1,0 +1,25 @@
+{
+  "name": "Owl's Opus Inventor Lab",
+  "short_name": "Inventor Lab",
+  "description": "A Rowlie-powered invention studio for middle school students.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#fffaf0",
+  "theme_color": "#6b3eb5",
+  "orientation": "landscape-primary",
+  "icons": [
+    {
+      "src": "assets/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "assets/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
