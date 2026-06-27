@@ -2086,3 +2086,11 @@ body, button, input, textarea, select{
 .spark-dot.k {
   background: #c8102e;
 }
+.deck-stage {
+  display: block;
+}
+
+.draw-area {
+  max-width: 1100px;
+  margin: 0 auto;
+}
