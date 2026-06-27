@@ -1,4 +1,4 @@
-const CACHE_NAME = "owls-opus-inventor-lab-v9";
+const CACHE_NAME = "owls-opus-inventor-lab-v2-sprint6-3";
 const CORE_ASSETS = [
   "./",
   "./index.html",

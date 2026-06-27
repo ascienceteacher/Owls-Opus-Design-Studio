@@ -286,9 +286,9 @@ const inspirationDeck = [
   }
 ];
 
-const APP_VERSION = "v9";
+const APP_VERSION = "2.0-sprint5A-safe";
 const SESSION_KEY = "currentInventorSession_v3";
-const steps = ["home","drawProblem","drawPower","drawInspiration","cards","problem","power","inspiration","mashup","whatif","originality","science","pitch","studio","summary","inventorWall"];
+const steps = ["home","drawProblem","drawPower","drawInspiration","cards","problem","power","inspiration","mashup","whatif","originality","science","studio","pitch","summary","inventorWall"];
 let state = JSON.parse(localStorage.getItem(SESSION_KEY) || localStorage.getItem("currentInventorSession_v2") || "null") || {
   step:0, student:{name:"", period:"", teacher:""}, problem:null, power:null, inspiration:null, answers:{}, sidekick:{}, notebook:{}, badges:[]
 };
@@ -322,6 +322,44 @@ function ensureDeckState(){
   state.deckHistory = state.deckHistory || {problem:[], power:[], inspiration:[]};
 }
 
+function ensureSwitchLimits(){
+  state.switchLimits = state.switchLimits || {};
+  if(typeof state.switchLimits.hand !== "number") state.switchLimits.hand = 3;
+  if(typeof state.switchLimits.problem !== "number") state.switchLimits.problem = 2;
+  if(typeof state.switchLimits.power !== "number") state.switchLimits.power = 2;
+  if(typeof state.switchLimits.inspiration !== "number") state.switchLimits.inspiration = 2;
+}
+
+function canConsumeSwitch(type){
+  ensureSwitchLimits();
+  return (state.switchLimits[type] || 0) > 0;
+}
+
+function consumeSwitch(type){
+  ensureSwitchLimits();
+  if((state.switchLimits[type] || 0) <= 0) return false;
+  state.switchLimits[type] -= 1;
+  return true;
+}
+
+function switchLabel(type, label){
+  ensureSwitchLimits();
+  const left = state.switchLimits[type] ?? 0;
+  return `${label} (${left} left)`;
+}
+
+function sparksDisplay(){
+  ensureSwitchLimits();
+  const left = state.switchLimits.hand ?? 0;
+  return Array.from({length:3}, (_,i)=>`<span class="spark-dot ${i < left ? 'active' : 'empty'}">${i < left ? '💡' : '○'}</span>`).join('');
+}
+
+function switchLimitMessage(type){
+  if(type === "hand") return "You used all 3 Inspiration Sparks. Now it is time to think like an inventor and build from the cards you have.";
+  const names = {problem:"Problem", power:"Power-Up", inspiration:"Inspiration"};
+  return `You used your ${names[type] || 'card'} switches. Try asking Rowlie for a new way to connect this card.`;
+}
+
 function drawFromDeck(type, currentCard=null){
   ensureDeckState();
   const deck = getDeckArray(type);
@@ -353,21 +391,22 @@ function esc(s){ return String(s ?? "").replace(/[&<>"']/g, m => ({'&':'&amp;','
 
 
 const stepLabels = {
-  home:["Start","Student Info"],
-  drawProblem:["Problem Patrol","Draw problem"],
-  drawPower:["Power-Up","Draw power"],
-  drawInspiration:["Inspiration","Draw inspiration"],
-  cards:["Design Table","Draw/switch cards"],
-  problem:["Spot Problem","Explain problem"],
-  power:["Pair Power-Up","Connect feature"],
-  inspiration:["Remix Inspiration","Learn & remix"],
-  mashup:["Mash-Up","Brainstorm ideas"],
-  whatif:["What If","Stretch thinking"],
-  originality:["Originality","Google search"],
-  science:["Science Coach","Explain science"],
-  pitch:["Pitch","Explain idea"],
-  studio:["Prototype Studio","Draw/upload"],
-  summary:["Summary","Submit/print"], inventorWall:["Inventor Wall","Class ideas"]
+  home:["Start","Welcome"],
+  drawProblem:["Mission 1","Problem Patrol"],
+  drawPower:["Mission 2","Power-Up"],
+  drawInspiration:["Mission 2","Inspiration"],
+  cards:["Mission 2","Design Table"],
+  problem:["Mission 1","Spot the Problem"],
+  power:["Mission 2","Power Up"],
+  inspiration:["Mission 2","Remix Inspiration"],
+  mashup:["Mission 2","Mash-Up"],
+  whatif:["Mission 3","Ask Better Questions"],
+  originality:["Mission 3","Originality Coach"],
+  science:["Mission 3","Science Coach"],
+  studio:["Mission 4","Prototype Studio"],
+  pitch:["Mission 5","Pitch Your Invention"],
+  summary:["Mission 5","Summary"],
+  inventorWall:["Mission 5","Student Showcase"]
 };
 
 function canVisitStep(index){
@@ -409,22 +448,33 @@ function stepIsDone(step){
 }
 
 function renderProgressMenu(){
-  return `<div class="progress-menu no-print">
-    <h3>🧭 Inventor Lab Menu</h3>
-    <div class="menu-grid">
-      ${steps.map((s,i)=>{
+  // Display the menu in true S.P.A.R.K. order, even though the app's
+  // working flow still draws cards before students begin writing.
+  const menuOrder = [
+    "home",
+    "drawProblem", "problem",
+    "drawPower", "drawInspiration", "cards", "power", "inspiration", "mashup",
+    "whatif", "originality", "science",
+    "studio",
+    "pitch", "summary", "inventorWall"
+  ];
+  return `<div class="progress-menu mission-menu no-print">
+    <div class="mission-menu-title"><span>▦</span><div><b>Inventor Lab Menu</b><small>Move through your design missions in S.P.A.R.K. order.</small></div></div>
+    <div class="menu-grid mission-menu-grid">
+      ${menuOrder.map((s)=>{
+        const i = steps.indexOf(s);
         const labels = stepLabels[s] || [s,""];
         const locked = !canVisitStep(i);
         const active = i === state.step;
         const done = stepIsDone(s);
-        return `<button class="menu-item ${active?'active':''} ${done?'done':''} ${locked?'locked':''}" onclick="jumpToStep(${i})" ${locked?'disabled':''}>
-          ${done?'✓ ':''}${labels[0]}<small>${labels[1]}</small>
+        const stage = sparkStageForStep(s);
+        return `<button class="menu-item mission-menu-item stage-${stage.toLowerCase()} ${active?'active':''} ${done?'done':''} ${locked?'locked':''}" onclick="jumpToStep(${i})" ${locked?'disabled':''}>
+          <span class="menu-stage">${stage}</span><span class="menu-main">${done?'✓ ':''}${labels[0]}</span><small>${labels[1]}</small>
         </button>`;
       }).join("")}
     </div>
   </div>`;
 }
-
 function jumpToStep(index){
   if(!canVisitStep(index)){
     alert("Complete the earlier step first.");
@@ -436,21 +486,81 @@ function jumpToStep(index){
   render();
 }
 
+function sparkStageForStep(stepName){
+  if(["home","drawProblem","problem"].includes(stepName)) return "S";
+  if(["drawPower","drawInspiration","cards","power","inspiration","mashup"].includes(stepName)) return "P";
+  if(["whatif","originality","science"].includes(stepName)) return "A";
+  if(["studio"].includes(stepName)) return "R";
+  if(["pitch","summary","inventorWall"].includes(stepName)) return "K";
+  return "S";
+}
+
+function missionInfoForStep(stepName){
+  const map = {
+    drawProblem:["🎯","Mission 1","Spot a Problem","Every great invention begins by noticing a problem worth solving."],
+    problem:["🎯","Mission 1","Spot the Problem","Look closely at who has the problem, when it happens, and why it matters."],
+    drawPower:["⚡","Mission 2","Power Up","Add a feature, material, technology, or science idea to your invention."],
+    drawInspiration:["⚡","Mission 2","Find Inspiration","Learn how real young inventors turned problems into solutions."],
+    cards:["⚡","Mission 2","Design Table","Explore your card combination and decide what idea has potential."],
+    power:["⚡","Mission 2","Power Up","Connect your power-up card to the problem you want to solve."],
+    inspiration:["⚡","Mission 2","Remix Inspiration","Borrow the thinking move, not the invention."],
+    mashup:["⚡","Mission 2","Mash Everything Together","Combine the problem, power-up, and inspiration into possible invention ideas."],
+    whatif:["🦉","Mission 3","Ask Better Questions","Push your idea by asking what could change, improve, or surprise people."],
+    originality:["🦉","Mission 3","Originality Coach","Check what already exists and explain how your idea will be different."],
+    science:["🦉","Mission 3","Science Coach","Explain what science or engineering could make your invention work."],
+    studio:["✏️","Mission 4","Prototype Studio","Sketch, label, test, and refine your invention."],
+    pitch:["🚀","Mission 5","Pitch Your Invention","Explain your idea clearly so others understand the problem, solution, and impact."],
+    summary:["🚀","Mission 5","Inventor Lab Summary","Review your inventor snapshot, then save, submit, or share your work."],
+    inventorWall:["🏆","Mission 5","Student Inventor Showcase","Celebrate ideas, notice clever features, and get inspired without copying."]
+  };
+  return map[stepName] || ["🦉","Mission","Inventor Lab","Keep building your idea."];
+}
+
+function missionHeader(stepName){
+  const [icon, mission, title, desc] = missionInfoForStep(stepName);
+  const stage = sparkStageForStep(stepName);
+  return `<div class="mission-banner stage-${stage.toLowerCase()}">
+    <div class="mission-icon">${icon}</div>
+    <div><div class="stage-kicker">${mission} • ${stage}</div><h2>${title}</h2><p>${desc}</p></div>
+  </div>`;
+}
+
+function renderSparkTrail(){
+  const active = sparkStageForStep(steps[state.step]);
+  const items = [
+    ["S","Spot a Problem","Notice a real-world problem worth solving."],
+    ["P","Power Up","Add a feature, technology, or science idea."],
+    ["A","Ask Questions","Think deeper with Rowlie."],
+    ["R","Refine","Sketch, test, improve, and revise."],
+    ["K","Kick Off","Build, share, and inspire others."]
+  ];
+  return `<div class="spark-trail no-print">
+    <div class="spark-title"><b>S.P.A.R.K.</b><span>The Inventor's Process</span></div>
+    ${items.map(([letter,title,desc])=>`<div class="spark-step ${letter===active?'active':''}"><b>${letter}</b><span>${title}</span><small>${desc}</small></div>`).join('<div class="spark-arrow">→</div>')}
+  </div>`;
+}
+
 function shell(content){
-  app.innerHTML = `<div class="app">
+  const isHome = steps[state.step] === "home";
+  app.innerHTML = `<div class="app theme-refresh ${isHome?'home-app':''}">
     <div class="topbar no-print">
       <div class="brand">
-        <div class="owl">🦉</div>
-        <div><h1>Owl's Opus Inventor Lab <span class="version-chip">v9</span></h1><p>S.P.A.R.K. Inventor Cycle: Spot • Pair • Ask • Refine • Kickstart</p></div>
+        <img class="school-logo-img" src="assets/rowlett-logo-mock.png" alt="Rowlett Middle Academy logo">
+        <div><h1>Owl's Opus <span>Inventor Lab</span> <span class="version-chip">2.0</span></h1><p>S.P.A.R.K. — The Inventor's Process</p></div>
       </div>
       <div class="nav">
-        <button class="btn secondary" onclick="goHome()">Home</button>
-        <button class="btn purple" onclick="teacherLogin()">Teacher Hub</button><button class="btn green" onclick="openInventorWall()">Inventor Wall</button><button id="installAppButton" class="btn green" onclick="installInventorLab()">Install App</button>
+        <button class="nav-tile ${steps[state.step]==='home'?'active':''}" onclick="goHome()"><span>⌂</span>Home</button>
+        <button class="nav-tile ${steps[state.step]==='cards'?'active':''}" onclick="jumpToStep(${steps.indexOf('cards')})"><span>◎</span>Design Table</button>
+        <button class="nav-tile ${['problem','power','inspiration','mashup','whatif','originality','science'].includes(steps[state.step])?'active':''}" onclick="jumpToStep(${steps.indexOf('problem')})"><span>🦉</span>Coach</button>
+        <button class="nav-tile ${steps[state.step]==='studio'?'active':''}" onclick="jumpToStep(${steps.indexOf('studio')})"><span>✎</span>Studio</button>
+        <button class="nav-tile ${steps[state.step]==='inventorWall'?'active':''}" onclick="openInventorWall()"><span>🏆</span>Showcase</button>
+        <button class="nav-tile teacher-link" onclick="teacherLogin()"><span>▤</span>Teacher Hub</button>
       </div>
     </div>
-    ${renderProgressMenu()}
+    ${isHome ? '' : renderSparkTrail()}
+    ${isHome ? '' : renderProgressMenu()}
     ${content}
-    <div class="footer no-print">
+    <div class="footer no-print ${isHome?'home-footer-hidden':''}">
       <button class="btn secondary ${state.step===0?'hidden':''}" onclick="back()">Back</button>
       ${selectionSwitchButton()}
       <button class="btn" id="nextButton" onclick="nextAction()">${nextLabel()}</button>
@@ -461,19 +571,19 @@ function shell(content){
 
 function selectionSwitchButton(){
   const s=steps[state.step];
-  if(s==="drawProblem" && state.problem) return `<button class="btn red" onclick="switchCard('problem')">Switch Problem Card</button>`;
-  if(s==="drawPower" && state.power) return `<button class="btn red" onclick="switchCard('power')">Switch Power-Up Card</button>`;
-  if(s==="drawInspiration" && state.inspiration) return `<button class="btn red" onclick="switchCard('inspiration')">Switch Inspiration Card</button>`;
+  if(s==="drawProblem" && state.problem) return `<button class="btn red" onclick="switchCard('problem')" ${canConsumeSwitch("problem") ? "" : "disabled"}>${switchLabel("problem", "Switch Problem Card")}</button>`;
+  if(s==="drawPower" && state.power) return `<button class="btn red" onclick="switchCard('power')" ${canConsumeSwitch("power") ? "" : "disabled"}>${switchLabel("power", "Switch Power-Up Card")}</button>`;
+  if(s==="drawInspiration" && state.inspiration) return `<button class="btn red" onclick="switchCard('inspiration')" ${canConsumeSwitch("inspiration") ? "" : "disabled"}>${switchLabel("inspiration", "Switch Inspiration Card")}</button>`;
   return `<button class="btn secondary ${state.step===0?'hidden':''}" onclick="startOver()">Start Over</button>`;
 }
 
 function nextLabel(){
   const name = steps[state.step];
-  if(name==="home") return "Start Card Challenge";
+  if(name==="home") return "Start Inventing";
   if(name==="drawProblem") return state.problem ? "Keep Problem Card" : "Randomly Select Problem Card";
   if(name==="drawPower") return state.power ? "Keep Power-Up Card" : "Randomly Select Power-Up Card";
   if(name==="drawInspiration") return state.inspiration ? "Keep Inspiration Card" : "Randomly Select Inspiration Card";
-  if(name==="cards") return "Begin Brainstorming";
+  if(name==="cards") return "Let's Build This Idea";
   if(name==="studio") return "Create Summary";
   if(name==="summary") return "Print / Save PDF";
   if(name==="inventorWall") return "Back to Design Table";
@@ -502,9 +612,9 @@ function validateCurrentStep(){
     if(!el || el.value.trim().length < 12) return "Add a little more thinking before moving on. Try writing at least one complete sentence.";
   }
   if(s==="originality"){
-    const evidence=document.getElementById("searchEvidence")?.value.trim() || "";
+    const brief=document.getElementById("inventionBrief")?.value.trim() || "";
     const different=document.getElementById("originality_text")?.value.trim() || "";
-    if(evidence.length < 12 || different.length < 12) return "Complete your Google search notes and explain how your idea will be different before moving on.";
+    if(brief.length < 25 || different.length < 12) return "Describe your invention and explain how your idea will be different before moving on.";
   }
   return "";
 }
@@ -518,14 +628,7 @@ function showWarning(msg){
 
 
 function drawAllThree(){
-  state.problem = drawFromDeck("problem", state.problem);
-  state.power = drawFromDeck("power", state.power);
-  state.inspiration = drawFromDeck("inspiration", state.inspiration);
-  save();
-  state.step = steps.indexOf("cards");
-  state.rowlieChat = state.rowlieChat || {};
-  state.rowlieChat.cards = [{role:"rowlie", text: rowlieCardReaction()}];
-  render();
+  dealNewHand();
 }
 
 function keepAllThree(){
@@ -553,14 +656,20 @@ function getCurrentCardSet(){
 }
 
 function dealNewHand(){
+  ensureSwitchLimits();
+  const alreadyHasHand = !!(state.problem && state.power && state.inspiration);
+  if(alreadyHasHand && !consumeSwitch("hand")){
+    state.rowlieCoach = state.rowlieCoach || {};
+    state.rowlieCoach.cards = {topic:"stuck", prompt:"What is one surprising connection you can find between these three cards?", hint:switchLimitMessage("hand")};
+    save();
+    render();
+    return;
+  }
   state.problem = drawFromDeck("problem", state.problem);
   state.power = drawFromDeck("power", state.power);
   state.inspiration = drawFromDeck("inspiration", state.inspiration);
   state.inspirationFeeling = 3;
-  state.rowlieChat = state.rowlieChat || {};
-  state.rowlieChat.cards = [
-    {role:"rowlie", text: rowlieCardReaction()}
-  ];
+  resetRowlieCoach("cards");
   save();
   state.step = steps.indexOf("cards");
   render();
@@ -617,62 +726,112 @@ function rowliePromptBank(topic){
   return banks[topic] || banks.stuck;
 }
 
+function ensureRowlieCoach(page){
+  state.rowlieCoach = state.rowlieCoach || {};
+  if(!state.rowlieCoach[page]){
+    const defaults = {
+      cards:{topic:"problem", prompt:"Which card feels easiest to connect to your invention idea?", hint:"Look for one small connection between the problem, the power-up, and the inspiration card."},
+      problem:{topic:"problem", prompt:"Who experiences this problem most often?", hint:"Start with one real person or group. Do not solve the whole problem yet."},
+      power:{topic:"prototype", prompt:"How could your power-up change or improve the problem?", hint:"Think about whether it protects, moves, organizes, alerts, powers, or simplifies something."},
+      inspiration:{topic:"originality", prompt:"What thinking move can you borrow from this inventor without copying the invention?", hint:"Look at how the inventor noticed a problem, used science, or helped a specific group of people."},
+      mashup:{topic:"stuck", prompt:"What is one invention idea that connects your problem and your power-up?", hint:"Try this sentence: My invention could help by _____."},
+      whatif:{topic:"stuck", prompt:"What is one way you could stretch your idea to make it more useful?", hint:"Make it smaller, safer, cheaper, greener, stronger, easier, or more accessible."},
+      originality:{topic:"originality", prompt:"What would make your invention different from something that already exists?", hint:"Different can mean safer, cheaper, easier to use, more helpful, more sustainable, or designed for a specific user."},
+      science:{topic:"science", prompt:"What science makes your invention possible?", hint:"Think about force, energy, materials, sensors, living things, or data."},
+      pitch:{topic:"user", prompt:"Who would use this invention first, and why would they care?", hint:"A strong pitch starts with the problem, then explains the solution and why it matters."}
+    };
+    state.rowlieCoach[page] = defaults[page] || {topic:"stuck", prompt:"What is one part of your idea you want to think through first?", hint:"Start small. You do not have to solve the whole problem yet."};
+  }
+  return state.rowlieCoach[page];
+}
+
+function resetRowlieCoach(page){
+  state.rowlieCoach = state.rowlieCoach || {};
+  state.rowlieCoach[page] = {
+    topic:"problem",
+    prompt:"Which card feels easiest to connect to your invention idea?",
+    hint:"Look for one small connection between the problem, the power-up, and the inspiration card."
+  };
+}
+
 function askRowlie(topic){
-  state.rowlieChat = state.rowlieChat || {};
   const page = steps[state.step] || "general";
-  const key = page;
   const list = rowliePromptBank(topic);
   const q = list[Math.floor(Math.random()*list.length)];
-  state.rowlieChat[key] = state.rowlieChat[key] || [];
-  state.rowlieChat[key].push({role:"rowlie", text:q});
+  state.rowlieCoach = state.rowlieCoach || {};
+  state.rowlieCoach[page] = {
+    topic,
+    prompt:q,
+    hint:rowlieHint(topic)
+  };
   save();
   render();
 }
 
-function addStudentChat(page, text){
-  state.rowlieChat = state.rowlieChat || {};
-  state.rowlieChat[page] = state.rowlieChat[page] || [];
-  if(text && text.trim().length){
-    state.rowlieChat[page].push({role:"student", text:text.trim()});
-  }
+function rowlieHint(topic){
+  const hints = {
+    problem:"Instead of solving the whole problem, solve one annoying part first.",
+    user:"Picture one real person using this. What would make their day easier?",
+    science:"Think about force, energy, materials, sensors, living things, or data.",
+    originality:"Do not quit if something similar exists. Make yours safer, cheaper, smaller, greener, or easier to use.",
+    prototype:"Build the simplest test version first. Cardboard, paper, recycled materials, or a quick sketch can count.",
+    stuck:"Try this sentence: My invention could help by _____."
+  };
+  return hints[topic] || hints.stuck;
+}
+
+function rowlieNudge(page){
+  const coach = ensureRowlieCoach(page);
+  return `<div class="chat-bubble rowlie"><b>💭 Rowlie notices:</b><br>${esc(rowlieSummary(page))}</div>
+    <div class="chat-bubble rowlie"><b>🤔 Think about this:</b><br>${esc(coach.prompt)}</div>`;
+}
+
+function rowlieSummary(page){
+  if(!state.problem || !state.power || !state.inspiration) return "Your invention idea will grow one choice at a time.";
+  const pageNotes = {
+    cards:"Your cards can become an invention if you look for one small connection first.",
+    problem:"You are not solving everything yet. You are noticing who has the problem and why it matters.",
+    power:"Your power-up is a tool. The goal is to decide how it helps solve the problem.",
+    inspiration:"Inspiration is for learning from another inventor's thinking, not copying their invention.",
+    mashup:"This is the messy idea stage. A rough idea is enough to keep moving.",
+    whatif:"Inventors stretch ideas before they settle on a final design.",
+    originality:"Original does not have to mean brand new. It can mean improved, redesigned, or made for a specific user.",
+    science:"Science explains why your invention could actually work.",
+    pitch:"A clear pitch helps someone understand the problem, solution, and why it matters."
+  };
+  const feeling = Number(state.inspirationFeeling || 3);
+  if(page === "cards" && feeling <= 2) return "This set might not feel connected yet. That is normal for inventors.";
+  return pageNotes[page] || "Rowlie can help you think through one step at a time.";
 }
 
 function rowlieHelperPanel(page){
-  state.rowlieChat = state.rowlieChat || {};
-  state.rowlieChat[page] = state.rowlieChat[page] || [{role:"rowlie", text:"I'm Rowlie. I won't invent for you, but I can help you think deeper. What do you want help with?"}];
-  return `<div class="rowlie-chat">
-    <h3>🦉 Rowlie AI Helper</h3>
-    ${state.rowlieChat[page].slice(-5).map(m=>`<div class="chat-bubble ${m.role}">${esc(m.text)}</div>`).join("")}
-    <textarea id="rowlieReply" placeholder="Reply to Rowlie or add your thinking here..."></textarea>
-    <div class="chat-controls">
-      <button class="btn purple" onclick="sendRowlieReply('${page}')">Send to Rowlie</button>
-      <button class="btn secondary" onclick="askRowlie('problem')">Problem</button>
-      <button class="btn secondary" onclick="askRowlie('user')">User</button>
-      <button class="btn secondary" onclick="askRowlie('science')">Science</button>
-      <button class="btn secondary" onclick="askRowlie('originality')">Originality</button>
-      <button class="btn secondary" onclick="askRowlie('prototype')">Prototype</button>
-      <button class="btn red" onclick="askRowlie('stuck')">I'm stuck</button>
+  const coach = ensureRowlieCoach(page);
+  return `<div class="rowlie-chat inventor-coach phase2-rowlie">
+    <div class="rowlie-side"><img src="assets/rowlie-goggles-mock.png" alt="Rowlie inventor coach"></div>
+    <div class="rowlie-main">
+      <h3>Ask Rowlie</h3>
+      <div class="rowlie-notice"><b>Rowlie notices:</b> ${esc(rowlieSummary(page))}</div>
+      <div class="rowlie-question"><b>Think about this:</b><br>${esc(coach.prompt)}</div>
+      <details class="rowlie-hint-box">
+        <summary>💡 Give me a hint</summary>
+        <p>${esc(coach.hint)}</p>
+      </details>
+      <div class="chat-controls">
+        <button class="btn primary-gold" onclick="askRowlie('${coach.topic || 'problem'}')">🎲 Ask Another Question</button>
+        <button class="btn secondary" onclick="askRowlie('problem')">Problem</button>
+        <button class="btn secondary" onclick="askRowlie('user')">User</button>
+        <button class="btn secondary" onclick="askRowlie('science')">Science</button>
+        <button class="btn secondary" onclick="askRowlie('originality')">Originality</button>
+        <button class="btn secondary" onclick="askRowlie('prototype')">Prototype</button>
+        <button class="btn red" onclick="askRowlie('stuck')">I'm Really Stuck</button>
+      </div>
     </div>
   </div>`;
 }
 
 function sendRowlieReply(page){
-  const el = document.getElementById("rowlieReply");
-  const text = el ? el.value : "";
-  addStudentChat(page, text);
-  if(text.trim().length){
-    const lower = text.toLowerCase();
-    let topic = "stuck";
-    if(lower.includes("science") || lower.includes("force") || lower.includes("energy")) topic = "science";
-    else if(lower.includes("different") || lower.includes("original")) topic = "originality";
-    else if(lower.includes("build") || lower.includes("prototype") || lower.includes("material")) topic = "prototype";
-    else if(lower.includes("who") || lower.includes("people") || lower.includes("student")) topic = "user";
-    else if(lower.includes("problem") || lower.includes("annoy")) topic = "problem";
-    const follow = rowliePromptBank(topic)[Math.floor(Math.random()*rowliePromptBank(topic).length)];
-    state.rowlieChat[page].push({role:"rowlie", text: follow});
-  }
-  save();
-  render();
+  // Kept for compatibility with older saved sessions, but Rowlie now shows one prompt at a time.
+  askRowlie('stuck');
 }
 
 function setInspirationFeeling(value){
@@ -682,9 +841,12 @@ function setInspirationFeeling(value){
 
 function notFeelingIt(){
   state.inspirationFeeling = 1;
-  state.rowlieChat = state.rowlieChat || {};
-  state.rowlieChat.cards = state.rowlieChat.cards || [];
-  state.rowlieChat.cards.push({role:"rowlie", text:"Not feeling it yet? That's normal. Try switching one card first, or deal a whole new hand if the whole set feels stuck."});
+  state.rowlieCoach = state.rowlieCoach || {};
+  state.rowlieCoach.cards = {
+    topic:"stuck",
+    prompt:"Which card feels like it does not belong yet? Try switching only that one first.",
+    hint:"Inventors often test several idea combinations before one clicks. You are not stuck; you are sorting."
+  };
   save();
   render();
 }
@@ -693,22 +855,23 @@ function publishToInventorWall(){
   saveInputs();
   updateNotebook();
   const wall = JSON.parse(localStorage.getItem("inventorWall") || "[]");
+  const ideaTitle = (state.answers.wallTitle || state.answers.inventionBrief || state.answers.pitch1 || "Inventor Idea").trim();
   const item = {
     id: Date.now(),
-    student: state.student,
+    title: ideaTitle,
     problem: getCardTitle(state.problem),
     power: getCardTitle(state.power),
     inspiration: getCardTitle(state.inspiration),
-    pitch: state.answers.pitch1 || state.answers.mashupIdeas || "Idea in progress",
+    pitch: state.answers.pitch1 || state.answers.inventionBrief || state.answers.mashupIdeas || "Idea in progress",
+    favoriteFeature: state.answers.powerHow_text || state.answers.pitch2 || "Feature still being refined.",
     science: state.answers.science_text || "",
     prototype: state.answers.prototypeSketch || "",
-    badges: state.badges || [],
     likes: 0,
     submittedAt: new Date().toLocaleString()
   };
   wall.push(item);
   localStorage.setItem("inventorWall", JSON.stringify(wall));
-  alert("Published to the Inventor Wall on this device.");
+  alert("Published anonymously to the Student Inventor Showcase on this device.");
 }
 
 function likeWallIdea(id){
@@ -719,23 +882,38 @@ function likeWallIdea(id){
   renderInventorWall();
 }
 
+function wallTitle(item){
+  return esc((item.title || item.pitch || "Inventor Idea").slice(0,70)) + ((item.title || item.pitch || "").length>70?"...":"");
+}
+
+function wallCard(item){
+  return `<div class="wall-card">
+    <h3>${wallTitle(item)}</h3>
+    <p><b>Problem solved:</b> ${esc(item.problem || "Problem still being refined.")}</p>
+    <p><b>Favorite feature:</b> ${esc(item.favoriteFeature || item.power || "Feature still being refined.")}</p>
+    <p><b>Inspired by:</b> ${esc(item.inspiration || "Inventor thinking")}</p>
+    <button class="btn secondary" onclick="likeWallIdea(${item.id})">💡 This gave me an idea!</button>
+    <span class="wall-like">${item.likes||0} inspired</span>
+  </div>`;
+}
+
 function renderInventorWall(){
   const wall = JSON.parse(localStorage.getItem("inventorWall") || "[]");
-  shell(`<section class="panel">
-    <h2 style="font-size:38px;margin-top:0">🌟 Inventor Wall</h2>
-    <p class="callout">Celebrate invention ideas. Use this wall to notice creative thinking, not to copy.</p>
-    <div class="wall-grid">
-      ${wall.map(item=>`<div class="wall-card">
-        <h3>${esc(item.pitch).slice(0,70)}${esc(item.pitch).length>70?"...":""}</h3>
-        <div class="wall-meta"><b>${esc(item.student?.name || "Inventor")}</b> • ${esc(item.student?.period || "")} • ${esc(item.submittedAt || "")}</div>
-        <p><b>Problem:</b> ${esc(item.problem)}</p>
-        <p><b>Power-Up:</b> ${esc(item.power)}</p>
-        <p><b>Inspiration:</b> ${esc(item.inspiration)}</p>
-        <p><b>Science:</b> ${esc(item.science || "Not added yet.")}</p>
-        <p>${(item.badges||[]).map(b=>`<span class="badge">${esc(b)}</span>`).join("")}</p>
-        <button class="btn secondary" onclick="likeWallIdea(${item.id})">❤️ Inspired Me</button>
-        <span class="wall-like">${item.likes||0} inspired</span>
-      </div>`).join("") || `<div class="wall-card"><h3>No ideas yet</h3><p>Publish from the Summary page to add projects here.</p></div>`}
+  shell(`<section class="sprint4-page showcase-page">
+    <div class="sprint4-banner showcase-banner">
+      <div>
+        <div class="stage-kicker">K — Kick Off</div>
+        <h2>Student Inventor Showcase</h2>
+        <p>Celebrate creative invention ideas without posting student names or class periods.</p>
+      </div>
+      <div class="banner-badge">Be inspired. Don’t copy.</div>
+    </div>
+    <div class="sprint4-helper-card">
+      <h3>How to use this showcase</h3>
+      <p>Look for clever problems, useful features, and smart science connections. Use classmates’ ideas to spark your own thinking, not to copy their invention.</p>
+    </div>
+    <div class="wall-grid sprint4-wall-grid">
+      ${wall.map(item=>wallCard(item)).join("") || `<div class="wall-card empty-showcase-card"><h3>No ideas yet</h3><p>Publish from the Summary page to add projects here.</p><button class="btn primary-gold" onclick="jumpToStep(${steps.indexOf('summary')})">Go to Summary</button></div>`}
     </div>
   </section>`);
 }
@@ -760,52 +938,112 @@ function render(){
   if(step==="inventorWall") return renderInventorWall();
 }
 
+function sampleGalleryCards(){
+  return inspirationDeck.slice(0,3).map((item,idx)=>`<div class="wall-card preview-card">
+    <h3>${esc(item.invention)}</h3>
+    <p>${esc(item.what)}</p>
+    <button class="btn secondary" onclick="state.step=steps.indexOf('drawInspiration'); save(); render();">View Inspiration</button>
+  </div>`).join("");
+}
+
+function sampleWallCards(){
+  const wall = JSON.parse(localStorage.getItem("inventorWall") || "[]");
+  const samples = wall.slice(-3).reverse();
+  if(samples.length){ return samples.map(item=>wallCard(item)).join(""); }
+  return `<div class="wall-card preview-card"><h3>No ideas yet</h3><p>Student ideas will appear here after they publish from the Summary page.</p></div>`;
+}
+
+function openInspirationGallery(){
+  saveInputs();
+  state.step = steps.indexOf("drawInspiration");
+  save();
+  render();
+}
+
 function renderHome(){
-  shell(`<section class="panel hero">
-    <div class="hero-inner">
-      <h2>Welcome, Inventor!</h2>
-      <p>Randomly draw one card from each deck, then answer guided questions to build an original invention idea.</p>
-      <div class="callout">AI is not here to invent for you. The owl helps you ask better questions so <b>you</b> can create the solution.</div>
-      <div class="student-form">
-        <div class="field"><label>Student Name</label><input id="studentName" value="${esc(state.student.name)}" placeholder="Name"></div>
-        <div class="field"><label>Class Period</label><select id="studentPeriod"><option value="">Choose period</option>${PERIODS.map(p=>`<option ${state.student.period===p?'selected':''}>${p}</option>`).join("")}</select></div>
-        <div class="field"><label>Teacher</label><select id="studentTeacher"><option value="">Choose teacher</option>${TEACHERS.map(t=>`<option ${state.student.teacher===t?'selected':''}>${t}</option>`).join("")}</select></div>
-      </div>
-      <div class="spark">
-        <div><b>S</b>Spot Problem</div><div><b>P</b>Pair Power-Up</div><div><b>A</b>Ask Questions</div><div><b>R</b>Refine Idea</div><div><b>K</b>Kickstart Prototype</div>
+  shell(`<section class="home-landing no-print">
+    <div class="home-hero-mock">
+      <div class="mondrian m-left"><span class="red"></span><span class="gold"></span><span class="blue"></span></div>
+      <div class="mondrian m-right"><span class="red"></span><span class="blue"></span><span class="gold"></span></div>
+      <div class="rowlie-mock"><img src="assets/rowlie-goggles-mock.png" alt="Rowlie wearing safety goggles"></div>
+      <div class="hero-message-mock">
+        <h2>Every great invention <span>starts with a spark.</span></h2>
+        <p>You’ve got the curiosity. We’ve got the tools.<br>Let’s turn your ideas into real solutions.</p>
+        <button class="mock-start" onclick="startFromHome()">Let’s Start Inventing <span>→</span></button>
       </div>
     </div>
+    <div class="spark-process-mock">
+      <div class="spark-label"><b>S.P.A.R.K.</b><span>The Inventor’s Process</span></div>
+      <div class="spark-card"><b class="s">S</b><div><strong>Spot<br>a Problem</strong><small>Notice a real-world problem worth solving.</small></div></div>
+      <div class="arrow">→</div>
+      <div class="spark-card"><b class="p">P</b><div><strong>Power Up</strong><small>Add a feature, technology, or science idea.</small></div></div>
+      <div class="arrow">→</div>
+      <div class="spark-card"><b class="a">A</b><div><strong>Ask<br>Questions</strong><small>Think deeper with Rowlie and explore possibilities.</small></div></div>
+      <div class="arrow">→</div>
+      <div class="spark-card"><b class="r">R</b><div><strong>Refine</strong><small>Sketch, test, improve, and revise your invention.</small></div></div>
+      <div class="arrow">→</div>
+      <div class="spark-card"><b class="k">K</b><div><strong>Kick Off</strong><small>Build, share, and inspire others.</small></div></div>
+    </div>
+    <div class="home-panels-mock">
+      <button class="home-panel-mock gallery" onclick="openInspirationGallery()">
+        <span class="panel-icon">◎</span>
+        <span><b>Inspiration Gallery</b><em>See inventions created by real young inventors from around the world. Learn how they noticed problems and turned them into creative solutions.</em><strong>Visit Inspiration Gallery →</strong></span>
+      </button>
+      <button class="home-panel-mock showcase" onclick="openInventorWall()">
+        <span class="panel-icon">🏆</span>
+        <span><b>Student Inventor Showcase</b><em>Explore inventions created by students in our class. Celebrate creative thinking, discover new ideas, and remember — be inspired, don’t copy!</em><strong>Visit Student Showcase →</strong></span>
+      </button>
+    </div>
+    <input type="hidden" id="studentName" value="${esc(state.student.name || 'Inventor')}">
+    <input type="hidden" id="studentPeriod" value="${esc(state.student.period || 'Period 1')}">
+    <input type="hidden" id="studentTeacher" value="${esc(state.student.teacher || 'Stasny')}">
   </section>`);
 }
+
+function startFromHome(){
+  state.student.name = state.student.name || "Inventor";
+  state.student.period = state.student.period || "Period 1";
+  state.student.teacher = state.student.teacher || "Stasny";
+  state.step = steps.indexOf("drawProblem");
+  save();
+  render();
+}
+
 function renderDrawProblem(){
-  shell(`<section class="panel deck-stage">
-    <div class="deck-reference"><img src="assets/deck1_problem_patrol.png" alt="Problem Patrol deck"></div>
-    <div class="draw-area">
-      <h2>Deck 1: Problem Patrol</h2>
-      <p>Randomly select a real-world problem to solve.</p>
-      ${state.problem ? card("problem","DECK 1: PROBLEM PATROL",state.problem[0],state.problem[1],"This is the problem your invention will try to solve.") : `<div class="callout">Tap the button below to draw your Problem Patrol card.</div>`}
+  shell(`<section class="phase2-stage stage-problem">
+    <div class="stage-art"><img src="assets/deck1_problem_patrol.png" alt="Problem Patrol deck"></div>
+    <div class="stage-copy">
+      <div class="stage-kicker">S — Spot a Problem</div>
+      <h2>Problem Patrol</h2>
+      <p class="stage-lede">Draw a real-world problem. This becomes the need your invention will try to solve.</p>
+      <div class="stage-tip"><b>Inventor Move:</b> Great inventions start by noticing what frustrates, slows down, wastes, spills, breaks, or gets in the way.</div>
+      ${state.problem ? card("problem","DECK 1: PROBLEM PATROL",state.problem[0],state.problem[1],"This is the problem your invention will try to solve.") : `<div class="phase2-empty-card"><b>Ready for Deck 1?</b><span>Use the button below to randomly select your Problem Patrol card.</span></div>`}
     </div>
   </section>`);
 }
 
 function renderDrawPower(){
-  shell(`<section class="panel deck-stage">
-    <div class="deck-reference"><img src="assets/deck2_powerup_cards.png" alt="Power-Up deck"></div>
-    <div class="draw-area">
-      <h2>Deck 2: Power-Up Cards</h2>
-      <p>Randomly select a feature, material, or technology to add.</p>
-      ${state.power ? card("power","DECK 2: POWER-UP",state.power[0],state.power[1],state.power[2]) : `<div class="callout">Tap the button below to draw your Power-Up card.</div>`}
+  shell(`<section class="phase2-stage stage-power">
+    <div class="stage-art"><img src="assets/deck2_powerup_cards.png" alt="Power-Up deck"></div>
+    <div class="stage-copy">
+      <div class="stage-kicker">P — Power Up</div>
+      <h2>Power-Up Cards</h2>
+      <p class="stage-lede">Draw a feature, material, tool, or technology that can transform your idea.</p>
+      <div class="stage-tip"><b>Inventor Move:</b> Do not worry if the connection is not obvious yet. Surprising combinations often lead to the best designs.</div>
+      ${state.power ? card("power","DECK 2: POWER-UP",state.power[0],state.power[1],state.power[2]) : `<div class="phase2-empty-card"><b>Ready for Deck 2?</b><span>Use the button below to randomly select your Power-Up card.</span></div>`}
     </div>
   </section>`);
 }
 
 function renderDrawInspiration(){
-  shell(`<section class="panel deck-stage">
-    <div class="deck-reference"><img src="assets/deck3_inspiration_cards.png" alt="Inspiration deck"></div>
-    <div class="draw-area">
-      <h2>Deck 3: Inventor Hall of Fame</h2>
-      <p>Randomly select a young inventor exhibit to inspire your thinking.</p>
-      ${state.inspiration ? card("inspiration","DECK 3: HALL OF FAME",state.inspiration.icon,state.inspiration.invention,`<b>Inventor:</b> ${state.inspiration.inventor}<br><b>What it does:</b> ${state.inspiration.what}<br><b>Science:</b> ${state.inspiration.science}`) : `<div class="callout">Tap the button below to draw your Inspiration card.</div>`}
+  shell(`<section class="phase2-stage stage-inspiration">
+    <div class="stage-art"><img src="assets/deck3_inspiration_cards.png" alt="Inspiration deck"></div>
+    <div class="stage-copy">
+      <div class="stage-kicker">P — Power Up with Inspiration</div>
+      <h2>Inventor Inspiration</h2>
+      <p class="stage-lede">Draw a real young inventor example. Use it to learn a thinking move, not to copy an invention.</p>
+      <div class="stage-tip"><b>Inventor Move:</b> Notice how another inventor spotted a problem, used science, and helped people.</div>
+      ${state.inspiration ? card("inspiration","DECK 3: INSPIRATION",state.inspiration.icon,state.inspiration.invention,`<b>Inventor:</b> ${state.inspiration.inventor}<br><b>What it does:</b> ${state.inspiration.what}<br><b>Science:</b> ${state.inspiration.science}`) : `<div class="phase2-empty-card"><b>Ready for Deck 3?</b><span>Use the button below to randomly select your Inspiration card.</span></div>`}
     </div>
   </section>`);
 }
@@ -820,29 +1058,52 @@ function card(type,label,icon,title,body){
 }
 
 function renderCards(){
-  shell(`<section class="panel">
-    <h2 style="font-size:38px;margin-top:0">Owl's Opus Design Table</h2>
-    <p class="callout">Draw one card from each deck. Keep the set, switch one card, or deal a whole new hand.</p>
-    <div class="design-table">
-      ${state.problem ? card("problem","DECK 1: PROBLEM PATROL",state.problem[0],state.problem[1],`<span class="deck-count">${remainingCount("problem")} cards left before reshuffle</span>`) : card("problem","DECK 1: PROBLEM PATROL","🎴","Problem Patrol","Draw a problem card.")}
-      ${state.power ? card("power","DECK 2: POWER-UP",state.power[0],state.power[1],`${state.power[2]}<br><span class="deck-count">${remainingCount("power")} cards left before reshuffle</span>`) : card("power","DECK 2: POWER-UP","⚡","Power-Up","Draw a power-up card.")}
-      ${state.inspiration ? card("inspiration","DECK 3: HALL OF FAME",state.inspiration.icon,state.inspiration.invention,`<b>Inventor:</b> ${state.inspiration.inventor}<br><b>Science:</b> ${state.inspiration.science}<br><span class="deck-count">${remainingCount("inspiration")} cards left before reshuffle</span>`) : card("inspiration","DECK 3: HALL OF FAME","🏛","Inventor Hall of Fame","Draw an inventor exhibit.")}
+  shell(`<section class="phase2-table-page">
+    <div class="table-hero">
+      <div>
+        <div class="stage-kicker">P — Power Up Your Idea</div>
+        <h2>Owl's Opus Design Table</h2>
+        <p>There are no wrong combinations. These cards are meant to spark ideas, not assign your invention.</p>
+      </div>
+      <div class="table-rule"><b>Your choices:</b><br>Ask Rowlie for support, switch one card, deal a new hand, or keep the set when it gets your imagination moving.</div>
+      <div class="spark-budget"><b>Inspiration Sparks</b><div class="spark-dots">${sparksDisplay()}</div><small>Use a spark to deal a full new hand. When the sparks are gone, build from the cards you have.</small></div>
     </div>
-    <div class="inspiration-slider">
-      <b>How inspired do you feel by this combination?</b>
-      <input type="range" min="1" max="5" value="${state.inspirationFeeling || 3}" onchange="setInspirationFeeling(this.value)">
-      <div>😕 Not yet &nbsp;&nbsp; 🤔 Maybe &nbsp;&nbsp; 😃 I have an idea!</div>
+    <div class="phase2-card-grid">
+      <div class="phase2-selected-card problem-card">
+        <div class="mini-label">Deck 1</div><h3>Problem Patrol</h3>
+        <div class="big-icon">${state.problem ? state.problem[0] : '🎴'}</div>
+        <h4>${state.problem ? esc(state.problem[1]) : 'Draw a problem card.'}</h4>
+        <p>${state.problem ? `<span class="deck-count">${remainingCount("problem")} cards left before reshuffle</span>` : 'This becomes the need your invention will solve.'}</p>
+        <button class="btn red" onclick="switchCard('problem')" ${canConsumeSwitch("problem") ? "" : "disabled"}>${switchLabel("problem", "Switch Problem")}</button>
+      </div>
+      <div class="phase2-selected-card power-card">
+        <div class="mini-label">Deck 2</div><h3>Power-Up</h3>
+        <div class="big-icon">${state.power ? state.power[0] : '⚡'}</div>
+        <h4>${state.power ? esc(state.power[1]) : 'Draw a power-up card.'}</h4>
+        <p>${state.power ? `${esc(state.power[2])}<br><span class="deck-count">${remainingCount("power")} cards left before reshuffle</span>` : 'This adds a feature, material, or technology.'}</p>
+        <button class="btn red" onclick="switchCard('power')" ${canConsumeSwitch("power") ? "" : "disabled"}>${switchLabel("power", "Switch Power-Up")}</button>
+      </div>
+      <div class="phase2-selected-card inspiration-card">
+        <div class="mini-label">Deck 3</div><h3>Inspiration</h3>
+        <div class="big-icon">${state.inspiration ? state.inspiration.icon : '◎'}</div>
+        <h4>${state.inspiration ? esc(state.inspiration.invention) : 'Draw an inspiration card.'}</h4>
+        <p>${state.inspiration ? `<b>Inventor:</b> ${esc(state.inspiration.inventor)}<br><b>Science:</b> ${esc(state.inspiration.science)}<br><span class="deck-count">${remainingCount("inspiration")} cards left before reshuffle</span>` : 'This helps you learn from another inventor.'}</p>
+        <button class="btn red" onclick="switchCard('inspiration')" ${canConsumeSwitch("inspiration") ? "" : "disabled"}>${switchLabel("inspiration", "Switch Inspiration")}</button>
+      </div>
+    </div>
+    <div class="phase2-controls">
+      <div class="inspiration-slider phase2-slider">
+        <b>How inspired do you feel by this combination?</b>
+        <input type="range" min="1" max="5" value="${state.inspirationFeeling || 3}" onchange="setInspirationFeeling(this.value)">
+        <div>😕 Not yet &nbsp;&nbsp; 🤔 Maybe &nbsp;&nbsp; 😃 I have an idea!</div>
+      </div>
+      <div class="design-actions no-print">
+        <button class="btn navy" onclick="drawAllThree()" ${canConsumeSwitch("hand") || !(state.problem && state.power && state.inspiration) ? "" : "disabled"}>🎲 ${state.problem && state.power && state.inspiration ? switchLabel("hand", "Deal New Hand") : "Draw All Three"}</button>
+        <button class="btn secondary" onclick="notFeelingIt()">😕 Not Feeling It</button>
+        <button class="btn primary-gold" onclick="keepAllThree()">🚀 Let's Build This Idea</button>
+      </div>
     </div>
     ${rowlieHelperPanel("cards")}
-    <div class="design-actions no-print">
-      <button class="btn purple" onclick="drawAllThree()">🎲 Draw All Three</button>
-      <button class="btn purple" onclick="dealNewHand()">🎲 Deal Me a Whole New Hand</button>
-      <button class="btn red" onclick="switchCard('problem')">Switch Problem</button>
-      <button class="btn red" onclick="switchCard('power')">Switch Power-Up</button>
-      <button class="btn red" onclick="switchCard('inspiration')">Switch Hall of Fame</button>
-      <button class="btn secondary" onclick="notFeelingIt()">😕 Not Feeling It</button>
-      <button class="btn green" onclick="keepAllThree()">❤️ Keep This Set</button>
-    </div>
   </section>`);
 }
 function sidekickFor(step){
@@ -904,94 +1165,112 @@ function meterFor(text){
   return `<div class="meter"><div class="${n>20?'filled':''}">🌱 Notice</div><div class="${n>50?'filled':''}">🌿 Understand</div><div class="${n>90?'filled':''}">🌳 Imagine</div><div class="${n>130?'filled':''}">🚀 Invent</div></div>`;
 }
 function coachPanel(step, prompts){
-  if(!state.sidekick[step]) state.sidekick[step] = prompts[0] || "What else could you try?";
-  const current = state.sidekick[step];
-  const textKeyMap={problem:"problemWhy_text",power:"powerHow_text",inspiration:"inspirationLearn_text",mashup:"mashupIdeas",whatif:"whatIf",originality:"originality_text",science:"science_text",pitch:"pitch1"};
-  const currentText=state.answers[textKeyMap[step]]||"";
-  const fb=coachFeedback(currentText);
-  return `<div class="coach-panel">
-    <h3>🦉 Rowlie Coach Panel</h3>
-    <p><b>Rowlie is wondering:</b> ${current}</p>
-    ${meterFor(currentText)}
-    <div class="feedback ${fb[0]}">${fb[1]}</div>
-    <div class="coach-buttons">
-      <button class="btn purple" onclick="newCoachQuestion('${step}')">Coach Me More</button>
-      <button class="btn secondary" onclick="sentenceStarter('${step}')">Matching Sentence Starter</button>
-      <button class="btn blue" onclick="showStrongExample('${step}')">Show Strong Thinking</button>
-    </div>
-  </div>`;
+  // v10.3: Use the same streamlined Ask Rowlie / Inventor Coach style on all student thinking pages.
+  // The original coach panel kept feedback history and extra reading; this keeps one clear prompt at a time.
+  return rowlieHelperPanel(step);
 }
+
 function renderQuestion(title,prompt,key,choices,sidekickPrompts=[]){
-  shell(`<section class="panel question">
-    <h2>${title}</h2>
-    <div class="prompt">${prompt}</div>
-    ${coachPanel(key==="problemWhy"?"problem":key==="powerHow"?"power":key, sidekickPrompts)}
-    <div class="choices">
-      ${choices.map(c=>`<div class="choice ${(state.answers[key]||[]).includes(c)?'selected':''}" onclick="toggleChoice('${key}', '${esc(c)}', this)">${c}</div>`).join("")}
+  const pageKey = key==="problemWhy" ? "problem" : key==="powerHow" ? "power" : key;
+  const stepName = steps[state.step];
+  const starter = getSentenceStarter(pageKey);
+  const checklist = pageKey === "science" ? ["Name the science idea.","Explain how it helps the invention work.","Describe one way to test it."] : pageKey === "power" ? ["Explain how the power-up helps.","Connect it to the problem.","Add one detail about the user."] : ["Name who is affected.","Explain when it happens.","Explain why it matters."];
+  shell(`<section class="mission-page mission-${pageKey}">
+    ${missionHeader(stepName)}
+    <div class="mission-card thinking-card clean-thinking-card">
+      <div class="prompt mission-prompt">${prompt}</div>
+      <h3>Choose what matters most</h3>
+      <p class="microcopy">Pick any ideas that connect to your invention. These choices help organize your thinking.</p>
+      <div class="choices sprint3-choices clean-choices">
+        ${choices.map(c=>`<div class="choice ${(state.answers[key]||[]).includes(c)?'selected':''}" onclick="toggleChoice('${key}', '${esc(c)}', this)">${c}</div>`).join("")}
+      </div>
+      <h3>My Thinking</h3>
+      <p class="sentence-starter"><b>Try starting:</b> ${esc(starter)}</p>
+      <textarea id="${key}_text" placeholder="Explain your thinking in at least one complete sentence...">${esc(state.answers[key+"_text"]||"")}</textarea>
+      <div class="inline-checklist"><b>Before the next mission:</b> ${checklist.map(x=>`<span>${x}</span>`).join("")}</div>
     </div>
-    <textarea id="${key}_text" placeholder="Explain your thinking in at least one complete sentence...">${esc(state.answers[key+"_text"]||"")}</textarea>
+    ${coachPanel(pageKey, sidekickPrompts)}
   </section>`);
 }
 
 function renderInspiration(){
   const i = state.inspiration;
-  shell(`<section class="panel">
-    <h2 style="font-size:38px;margin-top:0">Learn from Inspiration</h2>
-    <div class="inspiration-detail">
-      ${card("inspiration","DECK 3: HALL OF FAME",i.icon,i.invention,`<b>Young inventor:</b> ${i.inventor}`)}
-      <div>
-        <div class="info-box"><h3>What problem did it solve?</h3><p>${i.problem}</p></div>
-        <div class="info-box"><h3>What does the invention do?</h3><p>${i.what}</p></div>
-        <div class="info-box"><h3>The science behind it</h3><p>${i.science}</p></div>
+  shell(`<section class="phase2-learn-page">
+    <div class="learn-banner">
+      <div class="stage-kicker">P — Learn from Inspiration</div>
+      <h2>${esc(i.invention)}</h2>
+      <p>Study the inventor's thinking. Then remix the thinking move into your own original invention.</p>
+    </div>
+    <div class="learn-grid">
+      ${card("inspiration","DECK 3: INSPIRATION",i.icon,i.invention,`<b>Young inventor:</b> ${i.inventor}`)}
+      <div class="learn-panels">
+        <div class="info-box"><h3>Problem Solved</h3><p>${i.problem}</p></div>
+        <div class="info-box"><h3>What It Does</h3><p>${i.what}</p></div>
+        <div class="info-box"><h3>Science Behind It</h3><p>${i.science}</p></div>
         <div class="info-box"><h3>Inventor Thinking</h3><p>${i.think}</p></div>
-        ${coachPanel("inspiration",["What did this inventor notice first?","How did science help solve the problem?","What can you borrow as a thinking move, not as an invention?","Who benefited from this invention?"])}
-        <div class="prompt">What can you learn from this invention? How can you REMIX part of its thinking into your own invention without copying it?</div>
-        <textarea oninput="liveSave()" id="inspirationLearn_text" placeholder="I can remix this invention by...">${esc(state.answers.inspirationLearn_text||"")}</textarea>
       </div>
     </div>
+    ${rowlieHelperPanel("inspiration")}
+    <div class="prompt">What can you learn from this invention? How can you remix part of its thinking into your own invention without copying it?</div>
+    <textarea oninput="liveSave()" id="inspirationLearn_text" placeholder="I can remix this invention by...">${esc(state.answers.inspirationLearn_text||"")}</textarea>
   </section>`);
 }
 
 function renderTextQuestion(title,prompt,key,sidekickPrompts=[]){
-  shell(`<section class="panel question">
-    <h2>${title}</h2>
-    <div class="prompt">${prompt}</div>
-    ${coachPanel(key==="mashupIdeas"?"mashup":"whatif", sidekickPrompts)}
-    <textarea id="${key}" placeholder="Type your ideas here in at least one complete sentence...">${esc(state.answers[key]||"")}</textarea>
+  const pageKey = key==="mashupIdeas" ? "mashup" : "whatif";
+  const stepName = steps[state.step];
+  const starter = getSentenceStarter(pageKey);
+  shell(`<section class="mission-page mission-${pageKey}">
+    ${missionHeader(stepName)}
+    <div class="mission-card thinking-card clean-thinking-card wide-writing">
+      <div class="prompt mission-prompt">${prompt}</div>
+      <h3>Inventor Thinking Space</h3>
+      <p class="sentence-starter"><b>Try starting:</b> ${esc(starter)}</p>
+      <textarea id="${key}" placeholder="Type your ideas here in at least one complete sentence...">${esc(state.answers[key]||"")}</textarea>
+      <div class="idea-strips clean-strips">
+        <span>Make it safer</span><span>Make it smaller</span><span>Make it greener</span><span>Make it easier</span><span>Help a new user</span>
+      </div>
+    </div>
+    ${coachPanel(pageKey, sidekickPrompts)}
   </section>`);
 }
 
 function renderOriginality(){
-  shell(`<section class="panel question">
-    <h2>Originality Coach</h2>
-    <div class="prompt">Inventors research before they build. Do a quick Google search to see if something similar already exists.</div>
-    ${coachPanel("originality",["Try searching the problem + your power-up + the word invention.","Look for products, patents, videos, or science fair projects.","If something exists, ask: How could mine be different?","Different can mean smaller, safer, cheaper, greener, or easier to use."])}
-    <div class="search-box">
-      <h3>Step 1: Search your idea</h3>
-      <div class="search-row">
-        <div class="field"><label>Search terms</label><input id="searchTerms" value="${esc(state.answers.searchTerms || `${state.problem[1]} ${state.power[1]} invention`)}"></div>
-        <button class="btn purple" onclick="openGoogleSearch()">Open Google Search</button>
+  shell(`<section class="mission-page mission-originality">
+    ${missionHeader("originality")}
+    <div class="mission-card thinking-card clean-thinking-card">
+      <h3>1. Describe your invention</h3>
+      <p class="microcopy">Write 3–6 sentences in your own words. Explain the problem, how it works, who would use it, and what makes it different.</p>
+      <textarea oninput="liveSave()" id="inventionBrief" placeholder="My invention is... It helps... It works by... What makes it different is...">${esc(state.answers.inventionBrief||"")}</textarea>
+      <h3>2. Search for similar ideas</h3>
+      <div class="search-row sprint3-search-row clean-search-row">
+        <div class="field"><label>Search terms</label><input id="searchTerms" value="${esc(state.answers.searchTerms || "")}" placeholder="Example: backpack solar charger invention"></div>
+        <button class="btn primary-gold" onclick="openGoogleSearch()">Open Search</button>
       </div>
-      <p class="small-note">A new tab will open. Search for similar products, patents, or inventions. Then come back and write what you found.</p>
+      <p class="small-note">Search for similar products, patents, videos, or inventions. Then return here and write what you found.</p>
+      <div class="choices sprint3-choices clean-choices">
+        ${["Yes, something similar exists","Kind of / partly exists","No, I did not find anything similar","I need more research"].map(c=>`<div class="choice ${(state.answers.similarExists||[]).includes(c)?'selected':''}" onclick="toggleChoice('similarExists', '${esc(c)}', this)">${c}</div>`).join("")}
+      </div>
+      <h3>3. What did you find?</h3>
+      <textarea oninput="liveSave()" id="searchEvidence" placeholder="List websites, products, keywords, or notes from your search.">${esc(state.answers.searchEvidence||"")}</textarea>
+      <h3>4. How is yours different?</h3>
+      <textarea oninput="liveSave()" id="originality_text" placeholder="Smaller? Safer? Cheaper? Greener? Easier to use? Helps a different group?">${esc(state.answers.originality_text||"")}</textarea>
     </div>
-    <div class="choices">
-      ${["Yes, something similar exists","Kind of / partly exists","No, I did not find anything similar","I need more research"].map(c=>`<div class="choice ${(state.answers.similarExists||[]).includes(c)?'selected':''}" onclick="toggleChoice('similarExists', '${esc(c)}', this)">${c}</div>`).join("")}
-    </div>
-    <p><b>Step 2: What did you find?</b></p>
-    <textarea oninput="liveSave()" id="searchEvidence" placeholder="List websites, products, keywords, or notes from your search.">${esc(state.answers.searchEvidence||"")}</textarea>
-    <p><b>Step 3: How will your invention be different?</b></p>
-    <textarea oninput="liveSave()" id="originality_text" placeholder="Smaller? Safer? Cheaper? Greener? Easier to use? Helps a different group?">${esc(state.answers.originality_text||"")}</textarea>
+    ${coachPanel("originality",["What problem does your invention solve?","Who would use your invention?","What makes your idea different from things that already exist?","Different can mean smaller, safer, cheaper, greener, or easier to use."])}
   </section>`);
 }
 
 function renderPitch(){
-  shell(`<section class="panel question">
-    <h2>Kickstart Your Prototype</h2>
-    <div class="prompt">Write your first elevator pitch.</div>
+  shell(`<section class="mission-page mission-pitch">
+    ${missionHeader("pitch")}
+    <div class="mission-card thinking-card clean-thinking-card">
+      <h3>Build your pitch</h3>
+      <p><b>My invention solves...</b></p><textarea oninput="liveSave()" id="pitch1" placeholder="Name the problem and your solution.">${esc(state.answers.pitch1||"")}</textarea>
+      <p><b>People need this because...</b></p><textarea oninput="liveSave()" id="pitch2" placeholder="Explain who it helps and why it matters.">${esc(state.answers.pitch2||"")}</textarea>
+      <p><b>The science behind it is...</b></p><textarea oninput="liveSave()" id="pitch3" placeholder="Explain what makes it work.">${esc(state.answers.pitch3||"")}</textarea>
+      <div class="inline-checklist"><b>Strong pitch checklist:</b><span>Problem is clear</span><span>User is clear</span><span>Solution is clear</span><span>Science connection is clear</span></div>
+    </div>
     ${coachPanel("pitch",["Start with the problem, then explain your solution.","What is the most important feature?","Who would use it first?","What science makes it work?"])}
-    <p><b>My invention solves...</b></p><textarea oninput="liveSave()" id="pitch1">${esc(state.answers.pitch1||"")}</textarea>
-    <p><b>People need this because...</b></p><textarea oninput="liveSave()" id="pitch2">${esc(state.answers.pitch2||"")}</textarea>
-    <p><b>The science behind it is...</b></p><textarea oninput="liveSave()" id="pitch3">${esc(state.answers.pitch3||"")}</textarea>
   </section>`);
 }
 
@@ -1009,100 +1288,114 @@ function updateNotebook(){
     test:state.answers.testPlan||""
   };
   state.badges=[];
-  if(state.notebook.problem) state.badges.push("👀 Problem Spotter");
-  if(state.notebook.user) state.badges.push("❤️ Empathy Builder");
-  if(state.notebook.remix) state.badges.push("♻️ Creative Remixer");
-  if(state.notebook.science) state.badges.push("🔬 Science Thinker");
-  if(state.notebook.prototype) state.badges.push("🛠 Prototype Planner");
 }
 function note(title,text){return `<div class="note-item"><b>${title}</b><br>${esc(text||"Not added yet.")}</div>`;}
 function addCanvasStarter(t){const el=document.getElementById("prototypeSketch"); if(el){el.value=el.value?el.value+"\n"+t:t; liveSave(); el.focus();}}
 function renderStudio(){
   updateNotebook();
-  shell(`<section class="panel">
-    <h2 style="font-size:38px;margin-top:0">Rowlie's Prototype Studio</h2>
-    <div class="three-cards">
+  shell(`<section class="mission-page mission-studio">
+    ${missionHeader("studio")}
+    <div class="selected-card-strip clean-card-strip">
       ${card("problem","PROBLEM",state.problem[0],state.problem[1],"")}
       ${card("power","POWER-UP",state.power[0],state.power[1],"")}
       ${card("inspiration","INSPIRATION",state.inspiration.icon,state.inspiration.invention,"")}
     </div>
-    <br>
-    <div class="studio">
-      <div class="notebook">
-        <h3>📒 Rowlie's Notebook</h3>
+
+    <div class="mission-card prototype-board clean-prototype-board">
+      <h3>Prototype Canvas</h3>
+      <p class="prototype-note">Draw with your finger, Apple Pencil, or mouse. You can also upload a photo of a paper sketch or prototype.</p>
+      <div class="prototype-toolbar no-print clean-toolbar">
+        <button class="btn secondary" onclick="setTool('pen')">Pen</button>
+        <button class="btn secondary" onclick="setTool('eraser')">Eraser</button>
+        <button class="btn secondary" onclick="clearPrototypeCanvas()">Clear</button>
+        <button class="btn primary-gold" onclick="savePrototypeCanvas()">Save Drawing</button>
+        <label>Color <input type="color" id="drawColor" value="#171717"></label>
+        <label>Size <input type="range" id="drawSize" min="2" max="24" value="5"></label>
+      </div>
+      <div class="prototype-toolbar no-print clean-toolbar">
+        <input type="file" id="photoUpload" accept="image/*" onchange="uploadPrototypePhoto(event)">
+        <button class="btn blue" onclick="downloadPrototypeImage()">Download Image</button>
+      </div>
+      ${state.answers.prototypePhoto ? `<img class="photo-preview" src="${state.answers.prototypePhoto}" alt="Uploaded prototype photo">` : ""}
+      <div class="canvas-wrap"><canvas id="prototypeCanvas" width="900" height="420"></canvas></div>
+      <p><b>Prototype Notes</b></p>
+      <textarea id="prototypeSketch" oninput="liveSave()" placeholder="Describe your drawing. Label the parts, materials, science, and how it works.">${esc(state.answers.prototypeSketch||"")}</textarea>
+      <p><b>Testing Plan</b></p>
+      <textarea id="testPlan" oninput="liveSave()" placeholder="How could you test if this prototype works? What data could you collect?">${esc(state.answers.testPlan||"")}</textarea>
+    </div>
+
+    <div class="prototype-bank mission-card">
+      <h3>Prototype Bank</h3>
+      <p>Use these labels to plan your sketch and explain how your invention works.</p>
+      <div class="label-bank clean-label-bank">
+        ${["Part A","Material","Science","Input","Output","Energy","Safety","Test"].map(x=>`<span class="label-chip" onclick="addCanvasStarter('${x}:')">${x}</span>`).join("")}
+      </div>
+      <div class="buildability-row">
+        ${["Materials","Power/source","Size","Safety","Cost","Testing"].map(x=>`<span>${x}</span>`).join("")}
+      </div>
+    </div>
+
+    <div class="mission-card inventor-snapshot-mini">
+      <h3>Inventor Notebook Snapshot</h3>
+      <div class="snapshot-grid">
         ${note("Problem",state.notebook.problem)}
         ${note("Who it helps",state.notebook.user)}
         ${note("Power-Up",state.notebook.power)}
         ${note("Remix",state.notebook.remix)}
         ${note("Originality",state.notebook.originality)}
         ${note("Science",state.notebook.science)}
-        <h3>Badges</h3>
-        ${state.badges.map(b=>`<span class="badge">${b}</span>`).join("")}
-      </div>
-
-      <div class="prototype-board">
-        <h3>✏️ Prototype Canvas</h3>
-        <p class="prototype-note">Draw with your finger, Apple Pencil, or mouse. You can also upload a photo of a paper sketch or prototype and label it.</p>
-        <div class="prototype-toolbar no-print">
-          <button class="btn secondary" onclick="setTool('pen')">✏️ Pen</button>
-          <button class="btn secondary" onclick="setTool('eraser')">🧽 Eraser</button>
-          <button class="btn secondary" onclick="clearPrototypeCanvas()">Clear</button>
-          <button class="btn purple" onclick="savePrototypeCanvas()">Save Drawing</button>
-          <label>Color <input type="color" id="drawColor" value="#171717"></label>
-          <label>Size <input type="range" id="drawSize" min="2" max="24" value="5"></label>
-        </div>
-        <div class="prototype-toolbar no-print">
-          <input type="file" id="photoUpload" accept="image/*" onchange="uploadPrototypePhoto(event)">
-          <button class="btn blue" onclick="downloadPrototypeImage()">Download Image</button>
-        </div>
-        ${state.answers.prototypePhoto ? `<img class="photo-preview" src="${state.answers.prototypePhoto}" alt="Uploaded prototype photo">` : ""}
-        <div class="canvas-wrap">
-          <canvas id="prototypeCanvas" width="900" height="420"></canvas>
-        </div>
-
-        <p><b>Prototype Notes</b></p>
-        <textarea id="prototypeSketch" oninput="liveSave()" placeholder="Describe your drawing or uploaded photo. Label the parts, materials, science, and how it works.">${esc(state.answers.prototypeSketch||"")}</textarea>
-        <p><b>Testing Plan</b></p>
-        <textarea id="testPlan" oninput="liveSave()" placeholder="How could you test if this prototype works? What data could you collect?">${esc(state.answers.testPlan||"")}</textarea>
-      </div>
-
-      <div class="prototype-side">
-        <h3>🦉 Rowlie Coach</h3>
-        <p>Earlier, you said: <b>${esc((state.notebook.problem||"your problem").slice(0,90))}</b></p>
-        <p><b>Coach question:</b> Which part of your prototype actually solves that problem?</p>
-        <div class="label-bank">
-          ${["Part A","Material","Science","Input","Output","Energy","Safety","Test"].map(x=>`<span class="label-chip" onclick="addCanvasStarter('${x}:')">${x}</span>`).join("")}
-        </div>
-        <button class="btn purple" onclick="addCanvasStarter('Rowlie question: Which part might fail first?')">Add Rowlie Question</button>
-        <p><b>Buildability Check</b></p>
-        ${["Materials","Power/source","Size","Safety","Cost","Testing"].map(x=>`<span class="badge">${x}</span>`).join("")}
       </div>
     </div>
+    ${rowlieHelperPanel("prototype")}
   </section>`);
   setTimeout(initPrototypeCanvas, 50);
 }
 function renderSummary(){
   updateNotebook();
-  shell(`<section class="panel">
-    <h2 style="font-size:38px;margin-top:0">🎉 Inventor Lab Brainstorm Sheet</h2>
-    <div class="summary-grid">
-      <div class="summary-box"><h3>Student</h3><p><b>Name:</b> ${esc(state.student.name)}<br><b>Period:</b> ${esc(state.student.period)}<br><b>Teacher:</b> ${esc(state.student.teacher)}</p></div>
-      <div class="summary-box"><h3>Problem Card</h3><p>${state.problem[0]} ${state.problem[1]}</p></div>
-      <div class="summary-box"><h3>Power-Up Card</h3><p>${state.power[0]} ${state.power[1]} — ${state.power[2]}</p></div>
-      <div class="summary-box"><h3>Inspiration Card</h3><p><b>${state.inspiration.invention}</b><br>${state.inspiration.what}<br><b>Inventor:</b> ${state.inspiration.inventor}<br><b>Science:</b> ${state.inspiration.science}</p></div>
+  shell(`<section class="mission-page summary-page mission-summary">
+    ${missionHeader("summary")}
+
+    <div class="summary-hero-grid clean-summary-hero">
+      <div class="summary-feature-card mission-card">
+        <h3>Your Invention Pitch</h3>
+        <p>${esc(state.answers.pitch1 || state.answers.inventionBrief || state.answers.mashupIdeas || "Your pitch will appear here after you write it.")}</p>
+      </div>
+      <div class="summary-action-card mission-card no-print">
+        <h3>Next Step</h3>
+        <p>Choose how you want to save or share this brainstorm sheet.</p>
+        <div class="summary-actions">
+          <button class="btn green" onclick="submitResult()">Submit to Teacher Hub</button>
+          <button class="btn blue" onclick="publishToInventorWall()">Publish to Showcase</button>
+          <button class="btn primary-gold" onclick="window.print()">Print / Save PDF</button>
+        </div>
+      </div>
     </div>
-    <h3>Brainstorming Notes</h3>
-    <p><b>Problem:</b> ${esc(state.answers.problemWhy_text||"")}</p>
-    <p><b>Power-Up:</b> ${esc(state.answers.powerHow_text||"")}</p>
-    <p><b>Inspiration:</b> ${esc(state.answers.inspirationLearn_text||"")}</p>
-    <p><b>Mash-Up Ideas:</b> ${esc(state.answers.mashupIdeas||"")}</p>
-    <p><b>What If:</b> ${esc(state.answers.whatIf||"")}</p>
-    <p><b>Originality Search:</b> ${esc(state.answers.searchEvidence||"")}</p>
-    <p><b>How It Is Different:</b> ${esc(state.answers.originality_text||"")}</p>
-    <p><b>Science:</b> ${esc(state.answers.science_text||"")}</p>
-    <p><b>Pitch:</b> ${esc(state.answers.pitch1||"")} ${esc(state.answers.pitch2||"")} ${esc(state.answers.pitch3||"")}</p><p><b>Prototype:</b> ${esc(state.answers.prototypeSketch||"")}</p><p><b>Testing Plan:</b> ${esc(state.answers.testPlan||"")}</p><p><b>Badges:</b> ${state.badges.map(b=>`<span class="badge">${b}</span>`).join("")}</p>
-    <button class="btn green no-print" onclick="submitResult()">Submit to Teacher Hub</button><button class="btn purple no-print" onclick="publishToInventorWall()">Publish to Inventor Wall</button>
-    <button class="btn purple no-print" onclick="window.print()">Print / Save PDF</button>
+
+    <div class="mission-card inventor-snapshot">
+      <h3>My Inventor Snapshot</h3>
+      <div class="snapshot-grid">
+        <div class="summary-box"><h3>Problem</h3><p>${esc(state.answers.problemWhy_text||"Not added yet.")}</p></div>
+        <div class="summary-box"><h3>Best Feature</h3><p>${esc(state.answers.powerHow_text||state.power?.[1]||"Not added yet.")}</p></div>
+        <div class="summary-box"><h3>Science</h3><p>${esc(state.answers.science_text||"Not added yet.")}</p></div>
+        <div class="summary-box"><h3>Biggest Challenge</h3><p>${esc(state.answers.whatIf||state.answers.originality_text||"Not added yet.")}</p></div>
+        <div class="summary-box"><h3>Prototype</h3><p>${esc(state.answers.prototypeSketch||"Not added yet.")}</p></div>
+        <div class="summary-box"><h3>Next Step</h3><p>${esc(state.answers.testPlan||"Test the first prototype and collect feedback.")}</p></div>
+      </div>
+    </div>
+
+    <div class="summary-grid sprint4-summary-grid clean-card-summary">
+      <div class="summary-box"><h3>Student Info</h3><p><b>Name:</b> ${esc(state.student.name)}<br><b>Period:</b> ${esc(state.student.period)}<br><b>Teacher:</b> ${esc(state.student.teacher)}</p></div>
+      <div class="summary-box"><h3>Problem Card</h3><p>${state.problem[0]} ${state.problem[1]}</p></div>
+      <div class="summary-box"><h3>Power-Up Card</h3><p>${state.power[0]} ${state.power[1]}<br><span>${state.power[2]}</span></p></div>
+      <div class="summary-box"><h3>Inspiration Card</h3><p><b>${state.inspiration.invention}</b><br>${state.inspiration.what}<br><b>Inventor:</b> ${state.inspiration.inventor}</p></div>
+    </div>
+
+    <div class="evidence-grid clean-evidence-grid">
+      <div class="evidence-card"><h3>Inspiration Remix</h3><p>${esc(state.answers.inspirationLearn_text||"Not added yet.")}</p></div>
+      <div class="evidence-card"><h3>Mash-Up Ideas</h3><p>${esc(state.answers.mashupIdeas||"Not added yet.")}</p></div>
+      <div class="evidence-card"><h3>Originality Search</h3><p><b>Search notes:</b> ${esc(state.answers.searchEvidence||"Not added yet.")}<br><b>How mine is different:</b> ${esc(state.answers.originality_text||"Not added yet.")}</p></div>
+      <div class="evidence-card"><h3>Prototype + Test Plan</h3><p><b>Prototype:</b> ${esc(state.answers.prototypeSketch||"Not added yet.")}<br><b>Testing:</b> ${esc(state.answers.testPlan||"Not added yet.")}</p></div>
+    </div>
   </section>`);
 }
 
@@ -1126,13 +1419,30 @@ function nextAction(){
   render();
 }
 
-function switchCard(type){state.cardsLocked=false;if(type==="problem")state.problem=drawFromDeck("problem", state.problem);if(type==="power")state.power=drawFromDeck("power", state.power);if(type==="inspiration")state.inspiration=drawFromDeck("inspiration", state.inspiration);state.rowlieChat=state.rowlieChat||{};state.rowlieChat.cards=state.rowlieChat.cards||[];state.rowlieChat.cards.push({role:"rowlie",text:rowlieCardReaction()});save();render()}
+function switchCard(type){
+  ensureSwitchLimits();
+  const hasCurrent = !!state[type];
+  if(hasCurrent && !consumeSwitch(type)){
+    state.rowlieCoach = state.rowlieCoach || {};
+    state.rowlieCoach.cards = {topic:"stuck", prompt:"How could this card become useful if you looked at it from a different angle?", hint:switchLimitMessage(type)};
+    save();
+    render();
+    return;
+  }
+  state.cardsLocked=false;
+  if(type==="problem") state.problem=drawFromDeck("problem", state.problem);
+  if(type==="power") state.power=drawFromDeck("power", state.power);
+  if(type==="inspiration") state.inspiration=drawFromDeck("inspiration", state.inspiration);
+  resetRowlieCoach("cards");
+  save();
+  render();
+}
 
 function back(){ saveInputs(); state.step = Math.max(0,state.step-1); save(); render(); }
 function goHome(){ saveInputs(); state.step = 0; save(); render(); }
 function startOver(){
   if(confirm("Start over with new random cards?")){
-    state = {step:0, student:{name:"",period:"",teacher:""}, problem:null, power:null, inspiration:null, answers:{}, sidekick:{}, notebook:{}, badges:[], deckQueues:{problem:[],power:[],inspiration:[]}, deckHistory:{problem:[],power:[],inspiration:[]}, rowlieChat:{}, inspirationFeeling:3};
+    state = {step:0, student:{name:"",period:"",teacher:""}, problem:null, power:null, inspiration:null, answers:{}, sidekick:{}, notebook:{}, badges:[], deckQueues:{problem:[],power:[],inspiration:[]}, deckHistory:{problem:[],power:[],inspiration:[]}, rowlieChat:{}, rowlieCoach:{}, inspirationFeeling:3, switchLimits:{hand:3, problem:2, power:2, inspiration:2}};
     save(); render();
   }
 }
@@ -1262,34 +1572,41 @@ async function getTeacherResults(teacher){
 }
 
 async function renderTeacherHub(teacher){
-  app.innerHTML = `<div class="app">
+  app.innerHTML = `<div class="app theme-refresh">
     <div class="topbar no-print">
-      <div class="brand"><div class="owl">🦉</div><div><h1>${esc(teacher)} Teacher Hub</h1><p>Loading student results...</p></div></div>
-      <div class="nav"><button class="btn secondary" onclick="render()">Back to App</button></div>
+      <div class="brand"><img class="school-logo-img" src="assets/rowlett-logo-mock.png" alt="Rowlett logo"><div><h1>${esc(teacher)} <span>Teacher Hub</span></h1><p>Loading student results...</p></div></div>
+      <div class="nav"><button class="nav-tile" onclick="render()"><span>⌂</span>Back to App</button></div>
     </div>
     <section class="panel"><h2>Loading...</h2></section>
   </div>`;
 
   const {source, results} = await getTeacherResults(teacher);
-  app.innerHTML = `<div class="app">
+  app.innerHTML = `<div class="app theme-refresh">
     <div class="topbar no-print">
-      <div class="brand"><div class="owl">🦉</div><div><h1>${esc(teacher)} Teacher Hub</h1><p>Password-protected student results dashboard</p></div></div>
-      <div class="nav"><button class="btn secondary" onclick="render()">Back to App</button><button class="btn red" onclick="clearResults('${esc(teacher)}')">Clear Local Results</button></div>
+      <div class="brand"><img class="school-logo-img" src="assets/rowlett-logo-mock.png" alt="Rowlett logo"><div><h1>${esc(teacher)} <span>Teacher Hub</span></h1><p>Password-protected student results dashboard</p></div></div>
+      <div class="nav"><button class="nav-tile" onclick="render()"><span>⌂</span>Back to App</button><button class="nav-tile teacher-link" onclick="clearResults('${esc(teacher)}')"><span>×</span>Clear Local</button></div>
     </div>
-    <section class="panel">
-      <h2 style="font-size:38px;margin-top:0">Student Results</h2>
-      <div class="firebase-status">Data source: ${esc(source)} ${source==="Firestore" ? "✅ Shared dashboard connected." : "⚠️ Firebase config needed for a true shared dashboard."}</div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>Student</th><th>Cards</th><th>Idea / Pitch</th><th>Originality Search</th><th>Science / Prototype</th></tr></thead>
-          <tbody>${results.map(r=>`<tr>
-            <td><b>${esc(r.student?.name)}</b><br>${esc(r.student?.period)}<br>${esc(r.submittedAt || r.submittedAtISO || "")}</td>
-            <td><b>Problem:</b> ${esc(r.problem?.[1])}<br><b>Power:</b> ${esc(r.power?.[1])}<br><b>Inspiration:</b> ${esc(r.inspiration?.invention)}</td>
-            <td>${esc(r.answers?.pitch1 || r.answers?.mashupIdeas || "")}</td>
-            <td><b>Terms:</b> ${esc(r.answers?.searchTerms || "")}<br><b>Evidence:</b> ${esc(r.answers?.searchEvidence || "")}<br><b>Different:</b> ${esc(r.answers?.originality_text || "")}</td>
-            <td><b>Science:</b> ${esc(r.answers?.science_text || "")}<br><b>Prototype:</b> ${esc(r.answers?.prototypeSketch || "")}</td>
-          </tr>`).join("") || `<tr><td colspan="5">No submissions yet for ${esc(teacher)}.</td></tr>`}</tbody>
-        </table>
+    <section class="sprint4-page teacher-page">
+      <div class="sprint4-banner teacher-banner">
+        <div>
+          <div class="stage-kicker">Teacher View</div>
+          <h2>Student Results</h2>
+          <p>Review student thinking, originality notes, science evidence, and prototype plans.</p>
+        </div>
+        <div class="banner-badge">${results.length} submissions</div>
+      </div>
+      <div class="firebase-status sprint4-status">Data source: ${esc(source)} ${source==="Firestore" ? "✅ Shared dashboard connected." : "⚠️ Local browser storage. Add Firebase for a shared classroom dashboard."}</div>
+      <div class="teacher-card-grid">
+        ${results.map(r=>`<article class="teacher-result-card">
+          <header><h3>${esc(r.student?.name || "Student")}</h3><span>${esc(r.student?.period || "")}</span></header>
+          <p class="date-line">${esc(r.submittedAt || r.submittedAtISO || "")}</p>
+          <div class="mini-data"><b>Problem</b><span>${esc(r.problem?.[1] || "")}</span></div>
+          <div class="mini-data"><b>Power-Up</b><span>${esc(r.power?.[1] || "")}</span></div>
+          <div class="mini-data"><b>Inspiration</b><span>${esc(r.inspiration?.invention || "")}</span></div>
+          <div class="teacher-evidence"><h4>Idea / Pitch</h4><p>${esc(r.answers?.pitch1 || r.answers?.mashupIdeas || "")}</p></div>
+          <div class="teacher-evidence"><h4>Originality</h4><p><b>Terms:</b> ${esc(r.answers?.searchTerms || "")}<br><b>Evidence:</b> ${esc(r.answers?.searchEvidence || "")}<br><b>Different:</b> ${esc(r.answers?.originality_text || "")}</p></div>
+          <div class="teacher-evidence"><h4>Science / Prototype</h4><p><b>Science:</b> ${esc(r.answers?.science_text || "")}<br><b>Prototype:</b> ${esc(r.answers?.prototypeSketch || "")}</p></div>
+        </article>`).join("") || `<div class="empty-teacher-card"><h3>No submissions yet</h3><p>Student work will appear here after they submit from the Summary page.</p></div>`}
       </div>
     </section>
   </div>`;
