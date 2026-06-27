@@ -288,6 +288,8 @@ const inspirationDeck = [
 
 const APP_VERSION = "2.0-sprint5A-safe";
 const SESSION_KEY = "currentInventorSession_v3";
+const GOOGLE_SAVE_URL = "https://script.google.com/macros/s/AKfycbwmaY6jbQrS9xZepJhcDV49hf0Eelg9cgcVkTkgEHQV5cRv74ExWCuP6KcDb8sqBMzC/exec";
+let currentProjectKey = localStorage.getItem("owlProjectKey") || "";
 const steps = ["home","drawProblem","drawPower","drawInspiration","cards","problem","power","inspiration","mashup","whatif","originality","science","studio","pitch","summary","inventorWall"];
 let state = JSON.parse(localStorage.getItem(SESSION_KEY) || localStorage.getItem("currentInventorSession_v2") || "null") || {
   step:0, student:{name:"", period:"", teacher:""}, problem:null, power:null, inspiration:null, answers:{}, sidekick:{}, notebook:{}, badges:[]
@@ -295,7 +297,12 @@ let state = JSON.parse(localStorage.getItem(SESSION_KEY) || localStorage.getItem
 
 const app = document.getElementById("app");
 
-function save(){ localStorage.setItem(SESSION_KEY, JSON.stringify(state)); }
+function save(){
+  localStorage.setItem(SESSION_KEY, JSON.stringify(state));
+  if (currentProjectKey) {
+    saveToGoogleSheet();
+  }
+}
 function shuffleArray(array){
   const copy = [...array];
   for(let i = copy.length - 1; i > 0; i--){
@@ -554,7 +561,8 @@ function shell(content){
         <button class="nav-tile ${['problem','power','inspiration','mashup','whatif','originality','science'].includes(steps[state.step])?'active':''}" onclick="jumpToStep(${steps.indexOf('problem')})"><span>🦉</span>Coach</button>
         <button class="nav-tile ${steps[state.step]==='studio'?'active':''}" onclick="jumpToStep(${steps.indexOf('studio')})"><span>✎</span>Studio</button>
         <button class="nav-tile ${steps[state.step]==='inventorWall'?'active':''}" onclick="openInventorWall()"><span>🏆</span>Showcase</button>
-        <button class="nav-tile teacher-link" onclick="teacherLogin()"><span>▤</span>Teacher Hub</button>
+        <button class="nav-tile teacher-link" onclick="teacherLogin()"><span>▤</span>Teacher Hub</button> <button class="btn gold" onclick="loginToGoogleSave()">Save / Load Project</button>
+<button class="btn secondary" onclick="logoutProject()">Start Fresh</button>
       </div>
     </div>
     ${isHome ? '' : renderSparkTrail()}
@@ -1729,3 +1737,67 @@ function downloadPrototypeImage(){
 }
 
 render();
+async function googleRequest(payload){
+  const response = await fetch(GOOGLE_SAVE_URL, {
+    method: "POST",
+    body: JSON.stringify(payload)
+  });
+  return await response.json();
+}
+
+async function loginToGoogleSave(){
+  const firstName = prompt("First name:");
+  const lastInitial = prompt("Last initial:");
+  const period = prompt("Class period, example: Period 2");
+  const pin = prompt("Create or enter your 4-digit PIN:");
+
+  if (!firstName || !lastInitial || !period || !pin) {
+    alert("Please enter all login information.");
+    return;
+  }
+
+  const result = await googleRequest({
+    action: "login",
+    firstName,
+    lastInitial,
+    period,
+    pin,
+    projectData: state
+  });
+
+  if (!result.success) {
+    alert(result.message || "Login failed.");
+    return;
+  }
+
+  currentProjectKey = result.projectKey;
+  localStorage.setItem("owlProjectKey", currentProjectKey);
+
+  if (result.exists && result.projectData) {
+    state = result.projectData;
+    alert("Your saved project loaded.");
+  } else {
+    alert("New project created.");
+  }
+
+  save();
+  render();
+}
+
+async function saveToGoogleSheet(){
+  if (!currentProjectKey) return;
+
+  await googleRequest({
+    action: "save",
+    projectKey: currentProjectKey,
+    inventionTitle: state.answers?.pitch1 || "Untitled Invention",
+    projectData: state
+  });
+}
+
+function logoutProject(){
+  currentProjectKey = "";
+  localStorage.removeItem("owlProjectKey");
+  localStorage.removeItem(SESSION_KEY);
+  location.reload();
+}
