@@ -2094,3 +2094,24 @@ body, button, input, textarea, select{
   max-width: 1100px;
   margin: 0 auto;
 }
+.mission-hero,
+.deck-stage,
+.draw-area,
+.panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.mondrian-block,
+.corner-block,
+.decor-block {
+  z-index: 0;
+  pointer-events: none;
+}
+
+.mission-content,
+.draw-area > *,
+.panel > * {
+  position: relative;
+  z-index: 2;
+}
